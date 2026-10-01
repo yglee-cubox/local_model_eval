@@ -1,0 +1,15 @@
+{
+ "benchmark": "swe-bench-pro-v2",
+ "model": "Qwen3-1.7B",
+ "n_instances": 51,
+ "resolved": 0,
+ "resolve_rate": 0.0,
+ "agent_exit_status": {
+  "Submitted": 22,
+  "crash": 17,
+  "RepeatedFormatError": 7,
+  "LimitsExceeded": 5
+ },
+ "mean_agent_calls": 90.2,
+ "resolved_ids": []
+}

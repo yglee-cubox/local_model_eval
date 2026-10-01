@@ -148,6 +148,7 @@ grades/<instance_id>/verifier/reward.txt   1 = 해결 (output.json 에 테스트
 | `swepro/agent_in_container.py` | 컨테이너 안에서 도는 mini-swe-agent 실행기 |
 | `swepro/run_instance.sh` | 인스턴스 하나: 에이전트 → 채점 |
 | `swepro/all_ids.txt` | V2 642개 id |
+| `summarize_results.py` | `results/` 에서 모델별·벤치마크별 요약을 `summaries/` 로 모읍니다 (끝난 실행만, `test-*` 제외). `results/` 는 git 에 올리지 않고 `summaries/` 만 올립니다 |
 | `.venv-vllm/` | vLLM 0.30 (모델 서버) |
 | `.venv-agent/` | mini-swe-agent 2.4.6 (컨테이너 안에서 /purestorage 경로로 실행) |
 | `glibc-runtime/lib/` | glibc 로더와 라이브러리. Alpine(musl) 이미지에서도 `.venv-agent` 의 python 이 돌도록 이 로더로 실행합니다 (`run_instance.sh`) |
