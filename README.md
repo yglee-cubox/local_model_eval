@@ -6,6 +6,7 @@
 | 벤치마크 | 스크립트 | 하는 일 |
 |---|---|---|
 | LiveCodeBench | `lcb/lcb_local.sbatch`, `lcb/lcb_local_srun.sh` | vLLM 으로 코드 생성 → 공식 채점 (pass@1) |
+| LiveCodeBench (새 아키텍처 모델) | `lcb/lcb_server.sbatch` | vLLM 0.30 서버 + lcb_runner 공식 OpenAI 러너로 생성 → 공식 채점 (1-1) |
 | SWE-bench Pro V2 | `swepro/swepro_local.sbatch` | vLLM 서버 + mini-swe-agent(공식 설정)를 인스턴스 컨테이너(enroot)에서 실행 → 새 컨테이너에서 채점 (resolve rate) |
 | Terminal-Bench 4.0 | 없음 | 클러스터에서 실행 불가 (공용 README 3장) |
 
@@ -68,6 +69,84 @@ bash lcb/lcb_local_srun.sh /purestorage/ailab/<계정>/ckpt/step-1000 --start_da
   lcb_runner 기본 stop 문자열 `###` 이 마크다운 제목에서 답을 자르는 문제가 있어서, stop 을 토크나이저의 EOS 로 바꿉니다.
 - `chat_template` 은 `codegeneration` 시나리오만 지원합니다.
 
+### 1-1. lcb_runner 의 vLLM 이 못 읽는 모델: `lcb/lcb_server.sbatch`
+
+`lcb_local.sbatch` 는 lcb_runner 저장소의 가상 환경 (vLLM 0.8.4, transformers 4.51) 으로 모델을 띄웁니다.
+그래서 그보다 새로운 아키텍처는 읽지 못합니다. 예를 들어 Qwen3.5 계열 (`model_type: qwen3_5`, Qwen3.8-27B 등) 이 그렇습니다.
+이런 모델은 `lcb_server.sbatch` 를 씁니다.
+
+1. 잡의 GPU 에서 `.venv-vllm` (vLLM 0.30) 으로 OpenAI 호환 서버를 띄웁니다.
+2. lcb_runner 의 공식 `OpenAIChat` 러너가 그 서버에 요청합니다.
+   GPT-4o 같은 API 모델과 같은 경로이고, 프롬프트는 system + user 메시지입니다. chat template 은 서버가 적용합니다.
+3. 생성이 끝나면 lcb_runner 가 그대로 채점합니다. 결과 파일 위치와 형식은 `lcb_local.sbatch` 와 같습니다.
+
+```bash
+cd /purestorage/ailab/yglee/workspace/local_model_eval
+
+# GPU 8장, 텐서 병렬 2 × 데이터 병렬 4
+sbatch -p h100 --gres=gpu:8 \
+       --export=ALL,MODEL_PATH=<ckpt>,MODEL_NAME=my-27b,TP=2,TEMP=1.0,MAX_TOKENS=65536,PARALLEL=48 \
+       lcb/lcb_server.sbatch
+```
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `MODEL_PATH`, `MODEL_NAME`, `RELEASE`, `N`, `TEMP`, `MAX_TOKENS`, `OUT_DIR`, `EXTRA` | 위 표와 같음 | |
+| `TP` | 1 | 텐서 병렬 수. 데이터 병렬 수는 GPU 수 ÷ `TP` 입니다 |
+| `PARALLEL` | 32 | 동시에 보내는 요청 수 (요청 하나가 문제 하나의 `N` 개 샘플) |
+| `VLLM_ARGS` | | `vllm serve` 추가 옵션. thinking 끄기 등은 아래 "thinking 과 샘플링 설정" 참고 |
+| `SAMPLING_KWARGS` | | 요청마다 더할 샘플링 값 (JSON). 아래 "thinking 과 샘플링 설정" 참고 |
+
+- 요청 하나의 제한 시간은 4시간 (`--openai_timeout 14400`) 입니다. 긴 추론 모델도 시간 초과로 잘리지 않게 넉넉히 잡았습니다.
+- lcb_runner 는 생성이 **전부 끝난 뒤에** 결과 파일을 씁니다. 중간에 잡이 죽으면 생성한 것이 남지 않습니다.
+- vLLM 서버 로그: `<OUT_DIR>/vllm-<MODEL_NAME>-<잡번호>.log`
+- top_p 는 lcb_runner 기본값 0.95 로 요청에 들어갑니다. 바꾸려면 `EXTRA="--top_p 0.8"` 처럼 줍니다.
+  top_k 는 요청에 넣지 않으므로 서버 기본값 (체크포인트의 `generation_config.json`) 을 씁니다.
+- **thinking 모델은 `--reasoning-parser` 를 주지 마세요.** 그러면 thinking 이 답에 같이 들어가고, 답의 마지막 ```` ```python ```` 블록을 코드로 씁니다.
+  - parser 를 주면 thinking 이 `max_tokens` 에서 잘렸을 때 생성 전체가 thinking 으로 분류돼, 답 (content) 이 비고 코드를 못 꺼낼 수 있습니다.
+  - parser 없이 thinking 이 잘리면 thinking 안의 미완성 코드가 답으로 쓰여 대개 런타임 에러가 납니다.
+    잘린 답이 많으면 `MAX_TOKENS` 를 늘리세요 (예: Qwen3.8-27B 는 65536 에서 hard 문제 답의 약 18% 가 잘렸습니다. `summaries/analysis.md` 1-3).
+- 확인한 예 (h100 8장, `TP=2`, Qwen3.8-27B, release_v6 전체, n=10):
+  - thinking 켬: pass@1 0.862, 7시간 34분
+  - thinking 끔: pass@1 0.724, 1시간 32분
+
+## thinking 과 샘플링 설정 (LCB 서버 방식, SWE-bench Pro 공통)
+
+`lcb/lcb_server.sbatch` 와 `swepro/swepro_local.sbatch` 는 둘 다 vLLM 서버를 띄웁니다. 그래서 같은 방법으로 thinking 과 샘플링을 정합니다.
+
+| 하고 싶은 것 | 방법 |
+|---|---|
+| thinking 끄기 / 켜기 | `VLLM_ARGS='--default-chat-template-kwargs {"enable_thinking":false}'` (켜기는 `true`) |
+| temperature, top_p, top_k 등의 서버 기본값 바꾸기 | `VLLM_ARGS='--override-generation-config {"temperature":0.7,"top_p":0.8,"top_k":20}'` |
+| 서버 기본값으로 못 주는 값 (presence_penalty 등) | `SAMPLING_KWARGS='{"presence_penalty":1.5}'` |
+| thinking 을 답에서 분리 (SWE-bench Pro) | `VLLM_ARGS='--reasoning-parser qwen3'` (gemma-4 는 `gemma4`) |
+
+- **thinking 을 켜지도 끄지도 않으면 chat template 의 기본값을 따릅니다.** Qwen3 계열은 켜짐, gemma-4 는 꺼짐입니다.
+- **`SAMPLING_KWARGS` 가 필요한 이유:**
+  - vLLM 은 `generation_config` 의 temperature, top_p, top_k, min_p, repetition_penalty 만 서버 기본값으로 씁니다. presence_penalty 는 서버 기본값으로 줄 수 없습니다.
+  - lcb_runner 의 OpenAI 러너는 요청마다 `presence_penalty=0` 을 직접 넣습니다.
+  - `SAMPLING_KWARGS` 는 이 값들을 요청에 덮어씁니다 (`lcb/run_lcb_local.py`, `swepro/agent_in_container.py`).
+- **SWE-bench Pro 에서는 thinking 모델에 `--reasoning-parser` 를 주세요.** LCB 와 반대입니다.
+  - parser 가 없으면 thinking 이 답에 섞입니다.
+  - thinking 안에 ```` ``` ```` 블록이 있으면 명령 형식 오류 (`FormatError`) 가 나고, 대화 기록도 길어집니다.
+- **JSON 이 들어간 값은 `--export=ALL,...` 안에 쓰지 말고 미리 `export` 하세요.** `--export` 는 쉼표로 변수를 나눠서 JSON 이 깨집니다.
+
+실제로 Qwen3.8-27B thinking 끔 실행에 쓴 명령입니다 (모델 README 의 non-thinking 권장값).
+
+```bash
+export MODEL_PATH=<ckpt> MODEL_NAME=Qwen3.8-27B-nothink TEMP=0.7
+export SAMPLING_KWARGS='{"presence_penalty":1.5}'
+NT='--default-chat-template-kwargs {"enable_thinking":false} --override-generation-config {"temperature":0.7,"top_p":0.8,"top_k":20}'
+
+# LiveCodeBench
+VLLM_ARGS="$NT" TP=2 N=10 MAX_TOKENS=32768 PARALLEL=48 EXTRA="--top_p 0.8" \
+  sbatch -p h100 --gres=gpu:8 --export=ALL lcb/lcb_server.sbatch
+
+# SWE-bench Pro HARD-51
+VLLM_ARGS="$NT --reasoning-parser qwen3" CONC=16 MAX_TOKENS=32768 SAMPLING_KWARGS='{"top_p":0.8,"presence_penalty":1.5}' \
+  sbatch -p h100 --gres=gpu:4 --cpus-per-task=64 --mem=600G --export=ALL swepro/swepro_local.sbatch
+```
+
 ## 2. SWE-bench Pro V2
 
 한 잡 안에서 다음을 모두 합니다.
@@ -100,7 +179,8 @@ sbatch -p h100 --gres=gpu:4 --cpus-per-task=64 \
 | `MAX_MODEL_LEN` | 모델 설정값 | vLLM 컨텍스트 길이. 메모리가 모자라면 줄입니다 |
 | `TEMP`, `MAX_TOKENS` | 모델/vLLM 기본값 | 샘플링 |
 | `GRADE` | 1 | 0 이면 패치만 만듭니다 |
-| `VLLM_ARGS` | | `vllm serve` 추가 옵션 (예: `"--gpu-memory-utilization 0.85"`) |
+| `VLLM_ARGS` | | `vllm serve` 추가 옵션 (예: `"--gpu-memory-utilization 0.85"`). thinking 끄기 등은 "thinking 과 샘플링 설정" 참고 |
+| `SAMPLING_KWARGS` | | 요청마다 더할 샘플링 값 (JSON, 예: `'{"top_p":0.8,"presence_penalty":1.5}'`) |
 
 결과 (`results/swepro/<MODEL_NAME>/`):
 
@@ -137,12 +217,19 @@ grades/<instance_id>/verifier/reward.txt   1 = 해결 (output.json 에 테스트
 - 다른 사람이 쓸 때: 이 폴더의 가상 환경과 스크립트는 읽기만 하면 되지만, 결과와 로그는 이 폴더에 쓰려고 합니다.
   `OUT_DIR=<내 폴더>` 를 넘기고 `sbatch -o <내 폴더>/%x-%j.out ...` 으로 로그 위치를 바꾸거나, 폴더째 복사해서 쓰세요.
 - `env.sh` 가 잡 안에서 HF / vLLM / triton 캐시를 노드 로컬 `$HOME` 으로 돌립니다. (GPU 노드에서 /purestorage 파일 잠금이 안 되기 때문)
-  GPU 노드에 nvcc 가 없어서 vLLM 의 FlashInfer 샘플러도 끕니다 (`VLLM_USE_FLASHINFER_SAMPLER=0`).
+- GPU 노드에 nvcc 가 없어서, `env.sh` 는 실행 중에 커널을 컴파일하는 vLLM 의 FlashInfer 기능 두 가지를 끕니다.
+  - 샘플러: `VLLM_USE_FLASHINFER_SAMPLER=0`
+  - GPU 여러 장 (텐서 병렬) 에서 쓰는 all-reduce: `VLLM_ALLREDUCE_USE_FLASHINFER=0`.
+    이게 켜져 있으면 GPU 2장 이상에서 vLLM 이 뜨다가 `Could not find nvcc` 로 죽습니다.
+- **잡이 도는 동안 이 폴더의 bash 스크립트 (`run_instance.sh` 등) 를 고치지 마세요.**
+  bash 는 스크립트를 실행하면서 읽기 때문에, 파일이 바뀌면 `Stale file handle` 로 남은 인스턴스가 채점 단계를 건너뜁니다.
+  Python 파일은 시작할 때 한 번 읽으므로 비교적 안전합니다.
 
 | 경로 | 내용 |
 |---|---|
 | `env.sh` | 공통 환경 변수 |
 | `lcb/run_lcb_local.py` | LiveCodeBench 래퍼 (lcb_runner: `/purestorage/ailab/yglee/workspace/benchmarks/livecodebench`) |
+| `lcb/lcb_server.sbatch` | LiveCodeBench, vLLM 0.30 서버 방식 (1-1) |
 | `swepro/agent_in_container.py` | 컨테이너 안에서 도는 mini-swe-agent 실행기 |
 | `swepro/run_instance.sh` | 인스턴스 하나: 에이전트 → 채점 |
 | `swepro/all_ids.txt` | V2 642개 id |
