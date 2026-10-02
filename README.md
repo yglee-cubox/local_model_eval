@@ -67,8 +67,6 @@ bash lcb/lcb_local_srun.sh /purestorage/ailab/<계정>/ckpt/step-1000 --start_da
 - `chat_template` 스타일은 system 프롬프트 + 문제를 체크포인트의 템플릿으로 감싸고, 답의 마지막 ```` ```python ```` 블록을 코드로 씁니다.
   lcb_runner 기본 stop 문자열 `###` 이 마크다운 제목에서 답을 자르는 문제가 있어서, stop 을 토크나이저의 EOS 로 바꿉니다.
 - `chat_template` 은 `codegeneration` 시나리오만 지원합니다.
-- 확인한 결과 (a100 1장, deepseek-coder-1.3b-instruct, 2025-03 이후 80문제, n=1, greedy):
-  `chat_template` → Pass@1 0.10 (공식 등록 스타일 `DeepSeekCodeInstruct` 와 같음), `base` → 0.0125. 2~3분.
 
 ## 2. SWE-bench Pro V2
 
