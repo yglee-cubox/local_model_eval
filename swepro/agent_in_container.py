@@ -9,6 +9,7 @@ Writes to --out_dir: model.patch, trajectory.json, result.json
 """
 import argparse
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -19,7 +20,21 @@ from minisweagent.environments.local import LocalEnvironment
 from minisweagent.models import get_model
 
 
+def load_image_env():
+    """pyxis starts the container with the host's environment, which hides the image's ENV (e.g. PATH with
+    /usr/local/go/bin). enroot writes the image ENV to /etc/environment, so re-apply it for the agent's commands."""
+    try:
+        lines = Path("/etc/environment").read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        key, sep, value = line.partition("=")
+        if sep and key.strip() and not key.startswith("#"):
+            os.environ[key.strip()] = value.strip().strip('"')
+
+
 def main():
+    load_image_env()
     p = argparse.ArgumentParser()
     p.add_argument("--task_dir", required=True, help="v2-harbor/tasks/<instance_id>")
     p.add_argument("--out_dir", required=True)
@@ -50,6 +65,8 @@ def main():
         kwargs["temperature"] = a.temperature
     if a.max_tokens is not None:
         kwargs["max_tokens"] = a.max_tokens
+    # Extra sampling params as JSON, e.g. SAMPLING_KWARGS='{"top_p":0.8,"presence_penalty":1.5}'
+    kwargs.update(json.loads(os.environ.get("SAMPLING_KWARGS") or "{}"))
     model_cfg.update(model_kwargs=kwargs, cost_tracking="ignore_errors")
 
     cwd = "/app" if Path("/app").is_dir() else "/testbed"

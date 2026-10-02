@@ -91,6 +91,23 @@ def main():
     lm_styles.LanguageModelList.append(lm)
     lm_styles.LanguageModelStore[name] = lm
 
+    if os.environ.get("SAMPLING_KWARGS"):
+        # Extra request params for API-style runners (OpenAIChat), e.g. '{"presence_penalty":1.5}'.
+        # lcb_runner hard-codes presence_penalty=0 etc. in OpenAIRunner.client_kwargs.
+        import json
+
+        from lcb_runner.runner.oai_runner import OpenAIRunner
+
+        extra = json.loads(os.environ["SAMPLING_KWARGS"])
+        orig_init = OpenAIRunner.__init__
+
+        def init(self, *a, **kw):
+            orig_init(self, *a, **kw)
+            self.client_kwargs.update(extra)
+
+        OpenAIRunner.__init__ = init
+        print(f"[run_lcb_local] extra request params: {extra}", flush=True)
+
     from lcb_runner.runner.main import main as lcb_main
 
     output_dir = os.path.abspath(os.path.join(START_DIR, args.output_dir))
