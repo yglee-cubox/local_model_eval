@@ -1,0 +1,29 @@
+{
+ "benchmark": "swe-bench-pro-v2",
+ "run": "gemma-4-31B-it",
+ "base_model": "google/gemma-4-31B-it",
+ "thinking": "off",
+ "thinking_source": "chat template default",
+ "instance_set": "hard51_ids",
+ "gpus": 4,
+ "concurrency": 8,
+ "vllm_args": {
+  "tensor_parallel_size": 4
+ },
+ "n_instances": 51,
+ "resolved": 5,
+ "resolve_rate": 0.098,
+ "agent_exit_status": {
+  "Submitted": 50,
+  "RepeatedFormatError": 1
+ },
+ "mean_agent_calls": 15.3,
+ "mean_agent_seconds": 258,
+ "resolved_ids": [
+  "instance_ansible__ansible-d62496fe416623e88b90139dc7917080cb04ce70-v0f01c69f1e2528b935359cfe578530722bca2c59",
+  "instance_ansible__ansible-e9e6001263f51103e96e58ad382660df0f3d0e39-v30a923fb5c164d6cd18280c02422f75e611e8fb2",
+  "instance_gravitational__teleport-1316e6728a3ee2fc124e2ea0cc6a02044c87a144-v626ec2a48416b10a88641359a169d99e935ff037",
+  "instance_gravitational__teleport-f432a71a13e698b6e1c4672a2e9e9c1f32d35c12",
+  "instance_navidrome__navidrome-874b17b8f614056df0ef021b5d4f977341084185"
+ ]
+}

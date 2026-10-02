@@ -1,9 +1,17 @@
 {
  "benchmark": "livecodebench",
- "model": "models-deepseek-coder-1.3b-instruct",
+ "run": "models-deepseek-coder-1.3b-instruct",
+ "base_model": "models-deepseek-coder-1.3b-instruct",
+ "thinking": "n/a",
+ "thinking_source": "no enable_thinking in chat template",
  "scenario": "codegeneration",
+ "release": null,
  "n": 1,
  "temperature": 0.0,
+ "top_p": null,
+ "max_tokens": null,
+ "request_params": {},
+ "vllm_args": {},
  "n_problems": 80,
  "contest_dates": [
   "2025-03-01",

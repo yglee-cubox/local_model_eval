@@ -1,6 +1,15 @@
 {
  "benchmark": "swe-bench-pro-v2",
- "model": "Qwen3-1.7B",
+ "run": "Qwen3-1.7B",
+ "base_model": "Qwen3-1.7B",
+ "thinking": "on",
+ "thinking_source": "chat template default",
+ "instance_set": "hard51_ids",
+ "gpus": 1,
+ "concurrency": 8,
+ "vllm_args": {
+  "reasoning_parser": "qwen3"
+ },
  "n_instances": 51,
  "resolved": 0,
  "resolve_rate": 0.0,
@@ -11,5 +20,6 @@
   "LimitsExceeded": 5
  },
  "mean_agent_calls": 90.2,
+ "mean_agent_seconds": 356,
  "resolved_ids": []
 }
